@@ -1,0 +1,12 @@
+services:
+  pulse_of_nation:
+    image: billwan96/pulse_of_nation_vaccine:0.0
+    ports:
+      - "8787:8787"
+    volumes:
+      - .:/home/jovyan/work
+    deploy:
+      resources:
+        limits:
+          memory: 5G
+    platform: linux/arm64
