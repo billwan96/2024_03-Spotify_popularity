@@ -393,7 +393,16 @@ posterior_spotify_pred <- sampling(
 
 ```{r}
 summary_pred <- as.data.frame(summary(posterior_spotify_pred)$summary)
-summary_pred  <- summary_pred [c("mean")] %>%
-  mutate_if(is.numeric, round, 3)
-summary_pred
+summary_pred  <- summary_pred [96:445,c("mean")]
+# Calculate the total sum of squares
+sst <- sum((spotify_training$popularity - mean(spotify_training$popularity))^2)
+
+# Calculate the residual sum of squares
+ssr <- sum((spotify_training$popularity - summary_pred)^2)
+
+# Calculate the R-squared score
+r2_score <- 1 - (ssr / sst)
+
+# Print the R-squared score
+print(paste("The R-squared score is", r2_score))
 ```
