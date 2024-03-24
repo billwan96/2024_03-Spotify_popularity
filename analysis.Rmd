@@ -1,10 +1,11 @@
 ---
-title: "DSCI 553 Lab 4"
+title: "Hierarchical Models on Spotify Data"
 subtitle: Hierarchical Models and Model Diagnostics
 output:
-  pdf_document:
+  html_document:
     toc: yes
     toc_depth: '4'
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -13,13 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 \newpage
 
-# Lab Overview
+# Problem Overview
 
-This lab we will continue with Bayesian regression while digging into model diagnostics. Moreover, we will explore hierarchical models.
+We are using the spotify dataset <https://rdrr.io/cran/bayesrules/man/spotify.html>. This dataset include 350 songs and 23 variables. In this problem, we try to use the song artist and the danceability of the song to predict the popularity. In below, I would explore using normal regression and hierarchical Bayesian modelling.
 
 # Setup
-
-If you fail to load any packages, you can install them and try loading the library again.
 
 ```{r load libraries, message=FALSE, warning=FALSE}
 library(tidyverse)
@@ -37,13 +36,9 @@ rstan_options(auto_write = TRUE)  # To save some compiling
 
 \newpage
 
-# Exercise 1: The Ames, Iowa Housing Data
-
-The [Ames housing dataset](https://www.kaggle.com/prevek18/ames-housing-dataset/data#AmesHousing.csv) contains records of the sale of individual residential property in Ames, Iowa from 2006 to 2010. The **raw data set** contains 2,930 observations and a large number of explanatory variables (23 nominal, 23 ordinal, 14 discrete, and 20 continuous) involved in assessing home values.
-
 ### 1. Data Wrangling
 
-1.  Change our target vaccines_are_safe to a binary, drop `Neither Agree nor Disagree`, binary response `1` for `Somewhat Agree` and `Strongly Agree`; and `0` for `Somewhat Disagree` and `Strongly Disagree.`
+1.  We only need the column artist, danceability and popularity
 
 ```{r}
 spotify_training <-spotify %>%
@@ -118,7 +113,9 @@ print(scatter_plot)
 
 ```
 
-## Modelling the Data
+Here we see that for some artists there are less data points, and therefore our prediction is not doing very great, with a r-square pretty low. Also the prediction interval would be very huge because of our uncertainty.
+
+### 4. Using Bayesian Model to model the data
 
 $$
 \begin{align*} \text{likelihood:} \qquad Y_{i,j} \mid \mu_j, \sigma_w, \beta, X_{i,j} \sim \mathcal{N}(\mu_j + \beta X_{i,j}, \sigma^2_w) \\ \text{where} \quad \mu_j = \mu + b_j \\ \text{priors:} \quad b_j \mid \sigma_\mu \sim \mathcal{N}(0, \sigma_\mu^2) \\ \qquad \mu \sim \mathcal{N}(50, 52^2) \\ \qquad \beta \sim \mathcal{N}(0, 1) \\ \qquad \sigma_w \sim \text{Exponential}(1) \\ \qquad \sigma_\mu \sim \text{Exponential}(0.048). \end{align*}
@@ -134,10 +131,54 @@ The mean $\mu_j$ for each artist is modeled as a global mean $\mu$ plus an artis
 
 The priors for the global mean $\mu$, the coefficient $\beta$ of the danceability score, the within-artist standard deviation $\sigma_w$, and the between-artist standard deviation $\sigma_\mu$ are also specified. In the prior, it is estimated that the between artist variability would be higher than the within artist variability.
 
-```         
+### 4.1 Visualizing Priors
+
+```{r}
+prior_normal_50_52 <- ggplot() +
+  xlim(-200, 300) +
+  ylim(0, 0.01) +
+  geom_function(fun = dnorm, args = list(mean = 50, sd = 52), linewidth = 1) +
+  theme(
+    plot.title = element_text(size = 16),
+    axis.text.x = element_text(size = 12, angle = 0),
+    axis.text.y = element_text(size = 12, angle = 0),
+    axis.title = element_text(size = 12),
+  ) +
+  labs(y = "Density", x = expression(mu)) +
+  ggtitle(expression(paste("Prior Normal(50, ", 52^2, ")")))
+
+prior_exp_0.048 <- ggplot() +
+  xlim(0, 140) +
+  ylim(0, 0.05) +
+  geom_function(fun = dexp, args = list(rate = 0.048), linewidth = 1) +
+  theme(
+    plot.title = element_text(size = 16),
+    axis.text.x = element_text(size = 12, angle = 0),
+    axis.text.y = element_text(size = 12, angle = 0),
+    axis.title = element_text(size = 12),
+  ) +
+  labs(y = "Density", x = expression(sigma[mu])) +
+  ggtitle(expression("Prior Exponential(0.048)"))
+
+prior_exp_1 <- ggplot() +
+  xlim(0, 5) +
+  ylim(0, 1) +
+  geom_function(fun = dexp, args = list(rate = 1), linewidth = 1) +
+  theme(
+    plot.title = element_text(size = 16),
+    axis.text.x = element_text(size = 12, angle = 0),
+    axis.text.y = element_text(size = 12, angle = 0),
+    axis.title = element_text(size = 12),
+  ) +
+  labs(y = "Density", x = expression(sigma["w"])) +
+  ggtitle(expression("Prior Exponential(1)"))
 ```
 
-### Q1.3. Code the Model on `Stan`
+```{r}
+plot_grid(prior_normal_50_52, prior_exp_0.048, prior_exp_1)
+```
+
+### 4.2 Code the Model on `Stan`
 
 ```{stan output.var="spotify_stan_model", language="stan"}
 // YOUR CODE HERE
@@ -180,7 +221,7 @@ model {
 
 ```
 
-## Sample and Visualize the Posterior
+### 4.3 Sample and Visualize the Posterior
 
 ```{r tags=c()}
 levels(spotify_training$artist) <- 1:44
@@ -201,9 +242,9 @@ posterior_spotify <- sampling(
   iter = 25000,
   warmup = 5000,
   thin = 20,
-  seed = 553
+  seed = 553,
+  cores = getOption("mc.cores", 4)
 )
-
 
 posterior_spotify_sampling <- as.data.frame(posterior_spotify)
 ```
@@ -219,7 +260,7 @@ summary_overall
 
 -   The overall `danceability` is between 61.956 and 68.849 with 95% probability and a posterior mean of 65.316.
 
--   The overall `popularity` is less than danceability between 41.908 and 59.915 with 95% probability and a posterior mean of 51.107. The prediction interval is larger because it incorporates the danceability in estimation.
+-   The overall `popularity` is less than danceability between 41.908 and 59.915 with 95% probability and a posterior mean of 51.107. The credible interval is larger because it incorporates the danceability in estimation.
 
 -   Moreover, we see more variability associated to the between-artist standard deviation which align with our assumption. On the other hand, the within-artist variability shows less variability.
 
@@ -251,6 +292,108 @@ posterior_artist_means_CIs_plot <- summary_artist_means %>%
   geom_vline(xintercept = 0, linetype = "dashed")
 ```
 
+### See which artist has a higher popularity than the mean
+
 ```{r}
 posterior_artist_means_CIs_plot
+```
+
+From the above plot, we can see the artists that has a higher popularity compared to the overall mean popularity for the songs on the platform, since their credible intervals with positive bounds.
+
+### 4.4 MCMC Diagnosis
+
+```{r fig.width=20, fig.height=30, warning=FALSE, tags=c()}
+color_scheme_set("mix-blue-pink")
+
+trace_spotify_4_chains <- mcmc_trace(posterior_spotify,
+  pars = c(
+    "overall_mean_dance",
+    "overall_mean_popularity",
+    "between_sigma_dance",
+    "between_sigma_popularity",
+    "within_sigma_dance",
+    "within_sigma_popularity"),
+  size = 0.4,
+  facet_args = list(nrow = 6)
+) +
+  ggtitle("Trace Plots by Parameter of Interest") +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", family = "sans"),
+    axis.text = element_text(size = 12, family = "sans"),
+    axis.title = element_text(size = 12, family = "sans"),
+    legend.text = element_text(size = 12, family = "sans"),
+    legend.title = element_text(size = 12, family = "sans")
+  ) +
+  facet_text(size = 12)
+trace_spotify_4_chains 
+```
+
+We are seeing a flat pattern by parameter without any upward or a downward trend throughout the chain. Moreover, there isn't any chain stuck. Suggesting the sampling has gone well.
+
+### 4.5 Prediction of all songs (Suppose we do not have any information)
+
+```{stan output.var="spotify_pred_model", language="stan"}
+data {                          
+  int<lower=1> n;                     
+  int<lower=1> num_artist;            
+  int<lower=1> artist[n];             
+  vector[n] dance_score;              
+  vector[n] popularity_score;         
+}
+parameters {
+  vector[num_artist] mean_dance;      
+  vector[num_artist] mean_popularity; 
+  real overall_mean_dance;            
+  real overall_mean_popularity;       
+  real<lower=0> between_sigma_dance;  
+  real<lower=0> between_sigma_popularity;
+  real<lower=0> within_sigma_dance;   
+  real<lower=0> within_sigma_popularity;
+  real beta;                          
+}
+model {
+  between_sigma_dance ~ exponential(0.048);     
+  between_sigma_popularity ~ exponential(0.048);
+  within_sigma_dance ~ exponential(1);  
+  within_sigma_popularity ~ exponential(1);
+  overall_mean_dance ~ normal(50, 52);      
+  overall_mean_popularity ~ normal(50, 52);
+  beta ~ normal(0, 1);                      
+  for (j in 1:num_artist){            
+    mean_dance[j] ~ normal(0, between_sigma_dance);
+    mean_popularity[j] ~ normal(0, between_sigma_popularity);
+  }
+  for (i in 1:n){
+    int artist_index = artist[i];     
+    dance_score[i] ~ normal(overall_mean_dance + mean_dance[artist_index], within_sigma_dance);
+    popularity_score[i] ~ normal(overall_mean_popularity + mean_popularity[artist_index] + beta * dance_score[i], within_sigma_popularity);
+  }
+}
+generated quantities {
+  vector[n] popularity_score_pred;
+  for (i in 1:n){
+    int artist_index = artist[i];
+    popularity_score_pred[i] = normal_rng(overall_mean_popularity + mean_popularity[artist_index] + beta * dance_score[i], within_sigma_popularity);
+  }
+}
+
+```
+
+```{r}
+posterior_spotify_pred <- sampling(
+  object = spotify_pred_model,
+  data = spotify_dictionary,
+  chains = 1,
+  iter = 25000,
+  warmup = 5000,
+  thin = 20,
+  seed = 553
+)
+```
+
+```{r}
+summary_pred <- as.data.frame(summary(posterior_spotify_pred)$summary)
+summary_pred  <- summary_pred [c("mean")] %>%
+  mutate_if(is.numeric, round, 3)
+summary_pred
 ```
