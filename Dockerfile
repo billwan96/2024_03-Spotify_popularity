@@ -10,4 +10,4 @@ RUN apt-get update --fix-missing \
 	   	libxrender1 \
 		libxml2-dev
 
-RUN R -e "install.packages(c('tidyverse', 'infer', 'broom', 'rstan', 'rstantools', 'cowplot', 'akima', 'bayesplot'), repos='http://cran.rstudio.com/')"
+RUN R -e "install.packages(c('tidyverse', 'infer', 'broom', 'rstan', 'rstantools', 'cowplot', 'akima', 'bayesplot', 'bayesrules'), repos='http://cran.rstudio.com/')"

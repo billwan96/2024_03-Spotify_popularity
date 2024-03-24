@@ -1,6 +1,6 @@
 services:
-  pulse_of_nation:
-    image: billwan96/pulse_of_nation_vaccine:0.0
+  spotify:
+    image: billwan96/spotify:tagname
     ports:
       - "8787:8787"
     volumes:
