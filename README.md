@@ -2,7 +2,7 @@
 
 This project involves the application of Hierarchical Models and Model Diagnostics on Spotify data. The aim is to predict the popularity of a song based on the song artist and the danceability of the song. The project explores using normal regression and hierarchical Bayesian modelling.
 
-The analysis and the result can be found in (https://billwan96.github.io/2024_03-pulse_of_the_nation/index.html)
+The analysis and the result can be found in (https://billwan96.github.io/Hierarchical_Models_on_Spotify_Data/)
 
 ## Skills Highlighted
 - Bayesian Modelling
