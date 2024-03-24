@@ -1,0 +1,256 @@
+---
+title: "DSCI 553 Lab 4"
+subtitle: Hierarchical Models and Model Diagnostics
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\newpage
+
+# Lab Overview
+
+This lab we will continue with Bayesian regression while digging into model diagnostics. Moreover, we will explore hierarchical models.
+
+# Setup
+
+If you fail to load any packages, you can install them and try loading the library again.
+
+```{r load libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(infer)
+library(broom)
+library(rstan)
+library(rstantools)
+library(cowplot)
+library(akima)
+library(infer)
+library(bayesplot)
+library(bayesrules)
+rstan_options(auto_write = TRUE)  # To save some compiling
+```
+
+\newpage
+
+# Exercise 1: The Ames, Iowa Housing Data
+
+The [Ames housing dataset](https://www.kaggle.com/prevek18/ames-housing-dataset/data#AmesHousing.csv) contains records of the sale of individual residential property in Ames, Iowa from 2006 to 2010. The **raw data set** contains 2,930 observations and a large number of explanatory variables (23 nominal, 23 ordinal, 14 discrete, and 20 continuous) involved in assessing home values.
+
+### 1. Data Wrangling
+
+1.  Change our target vaccines_are_safe to a binary, drop `Neither Agree nor Disagree`, binary response `1` for `Somewhat Agree` and `Strongly Agree`; and `0` for `Somewhat Disagree` and `Strongly Disagree.`
+
+```{r}
+spotify_training <-spotify %>%
+  select(artist, danceability, popularity)
+spotify_training
+
+```
+
+```{r}
+artist_catalogue <- tibble(
+  artist = levels(spotify_training$artist),
+  code = 1:44
+)
+```
+
+### 2. Exploratory Data Analysis
+
+```{r fig.width=11, fig.height=7, tags=c()}
+
+scatter_plot <- ggplot(spotify_training, aes(x = danceability, y = popularity)) +
+  geom_point() +  # Scatterplot
+  labs(x = "Danceability", y = "Popularity") +  # Axes labels
+  ggtitle("Scatterplot of Popularity vs Danceability") +  # Plot title
+  theme_minimal()  # Minimal theme (adjust as needed)
+
+scatter_plot 
+```
+
+```{r fig.width=20, fig.height=15, warning=FALSE, tags=c()}
+popularity_boxplots <- spotify_training %>%
+  ggplot(aes(reorder(artist, popularity), popularity)) +
+  geom_boxplot(aes(fill = artist)) +
+  scale_fill_viridis_d(option="plasma")+
+  labs(y = "Popularity Score", x = "Artist") +
+  ggtitle("Side-by-Side Boxplots of Popularity by Artist") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.text = element_text(size = 14, angle = 90),
+    axis.title = element_text(size = 14),
+    legend.position = "none"
+  )
+
+popularity_boxplots
+
+```
+
+### 3. Modelling with a linear regression
+
+```{r}
+regression_model <- lm(popularity ~ danceability + artist, data = spotify_training)
+```
+
+```{r}
+summary(regression_model)
+```
+
+```{r}
+# Scatterplot with regression lines by artist and smaller legend
+scatter_plot <- ggplot(spotify_training, aes(x = danceability, y = popularity, color = artist)) +
+  geom_point() +  # Scatterplot
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) +  # Regression lines without confidence intervals
+  labs(x = "Danceability", y = "Popularity", title = "Scatterplot of Popularity vs Danceability by Artist") +
+  theme_minimal() +
+  scale_color_discrete(name = "Artist") +  # Legend title
+  theme(
+    legend.text = element_text(size = 6)  # Adjust legend text size
+  )
+
+# Print the scatterplot with smaller legend
+print(scatter_plot)
+
+
+```
+
+## Modelling the Data
+
+$$
+\begin{align*} \text{likelihood:} \qquad Y_{i,j} \mid \mu_j, \sigma_w, \beta, X_{i,j} \sim \mathcal{N}(\mu_j + \beta X_{i,j}, \sigma^2_w) \\ \text{where} \quad \mu_j = \mu + b_j \\ \text{priors:} \quad b_j \mid \sigma_\mu \sim \mathcal{N}(0, \sigma_\mu^2) \\ \qquad \mu \sim \mathcal{N}(50, 52^2) \\ \qquad \beta \sim \mathcal{N}(0, 1) \\ \qquad \sigma_w \sim \text{Exponential}(1) \\ \qquad \sigma_\mu \sim \text{Exponential}(0.048). \end{align*}
+$$
+
+In this model, $Y_{i,j}$ represents the popularity score of the $i$-th song by the $j$-th artist,
+
+$X_{i,j}$ represents the danceability score of the $i$-th song by the $j$-th artist.
+
+The popularity score of the **`i`**-th song is normally distributed with a mean that is the sum of the overall mean popularity, the artist-specific deviation in popularity, and the product of the danceability score and a coefficient. The standard deviation of this distribution is the within-artist standard deviation for popularity (**`within_sigma_popularity`**).
+
+The mean $\mu_j$ for each artist is modeled as a global mean $\mu$ plus an artist-specific deviation $b_j$. The artist-specific deviations are assumed to be normally distributed with mean 0 and between-artist standard deviation $\sigma_\mu$.
+
+The priors for the global mean $\mu$, the coefficient $\beta$ of the danceability score, the within-artist standard deviation $\sigma_w$, and the between-artist standard deviation $\sigma_\mu$ are also specified. In the prior, it is estimated that the between artist variability would be higher than the within artist variability.
+
+```         
+```
+
+### Q1.3. Code the Model on `Stan`
+
+```{stan output.var="spotify_stan_model", language="stan"}
+// YOUR CODE HERE
+data {                          
+  int<lower=1> n;                     //rows in training set
+  int<lower=1> num_artist;            //number of artists in training set
+  int<lower=1> artist[n];             //artist ID column by song in training set
+  vector[n] dance_score;              //danceability scores by song in training set
+  vector[n] popularity_score;         //popularity scores by song in training set
+}
+parameters {
+  vector[num_artist] mean_dance;      //vector of posterior danceability score deviations for each artist (size num_artist)
+  vector[num_artist] mean_popularity; //vector of posterior popularity score deviations for each artist (size num_artist)
+  real overall_mean_dance;            //overall mean in danceability score
+  real overall_mean_popularity;       //overall mean in popularity score
+  real<lower=0> between_sigma_dance;  //between-artist sd in danceability score
+  real<lower=0> between_sigma_popularity; //between-artist sd in popularity score
+  real<lower=0> within_sigma_dance;   //within-artist sd in danceability score
+  real<lower=0> within_sigma_popularity;  //within-artist sd in popularity score
+  real beta;                          //coefficient for danceability score
+}
+model {
+  between_sigma_dance ~ exponential(0.048);     //between-artist sd prior for danceability
+  between_sigma_popularity ~ exponential(0.048); //between-artist sd prior for popularity
+  within_sigma_dance ~ exponential(1);  //within-artist sd prior for danceability
+  within_sigma_popularity ~ exponential(1); //within-artist sd prior for popularity
+  overall_mean_dance ~ normal(50, 52);      //overall mean prior for danceability
+  overall_mean_popularity ~ normal(50, 52); //overall mean prior for popularity
+  beta ~ normal(0, 1);                      //prior for the coefficient of danceability score
+  for (j in 1:num_artist){            //danceability and popularity scores priors (deviations per artist)
+    mean_dance[j] ~ normal(0, between_sigma_dance);
+    mean_popularity[j] ~ normal(0, between_sigma_popularity);
+  }
+  for (i in 1:n){
+    int artist_index = artist[i];     //auxiliary indexing variable
+    dance_score[i] ~ normal(overall_mean_dance + mean_dance[artist_index], within_sigma_dance); //likelihood in training set for danceability
+    popularity_score[i] ~ normal(overall_mean_popularity + mean_popularity[artist_index] + beta * dance_score[i], within_sigma_popularity); //likelihood in training set for popularity
+  }
+}
+
+```
+
+## Sample and Visualize the Posterior
+
+```{r tags=c()}
+levels(spotify_training$artist) <- 1:44
+
+spotify_dictionary <- list(
+  n = nrow(spotify_training),
+  num_artist = nrow(artist_catalogue),
+  artist = as.integer(spotify_training$artist),
+  dance_score = spotify_training$danceability,
+  popularity_score = spotify_training$popularity
+)
+
+# YOUR CODE HERE
+posterior_spotify <- sampling(
+  object = spotify_stan_model,
+  data = spotify_dictionary,
+  chains = 4,
+  iter = 25000,
+  warmup = 5000,
+  thin = 20,
+  seed = 553
+)
+
+
+posterior_spotify_sampling <- as.data.frame(posterior_spotify)
+```
+
+```{r}
+summary_overall <- as.data.frame(summary(posterior_spotify)$summary)
+summary_overall <- summary_overall[89:94, c("mean", "sd", "2.5%", "97.5%")] %>%
+  mutate_if(is.numeric, round, 3)
+summary_overall
+```
+
+### Observation
+
+-   The overall `danceability` is between 61.956 and 68.849 with 95% probability and a posterior mean of 65.316.
+
+-   The overall `popularity` is less than danceability between 41.908 and 59.915 with 95% probability and a posterior mean of 51.107. The prediction interval is larger because it incorporates the danceability in estimation.
+
+-   Moreover, we see more variability associated to the between-artist standard deviation which align with our assumption. On the other hand, the within-artist variability shows less variability.
+
+```{r}
+summary_artist_means <- as.data.frame(summary(posterior_spotify)$summary)
+summary_artist_means <- summary_artist_means[45:88, c("mean", "sd", "2.5%", "97.5%")] %>%
+  mutate_if(is.numeric, round, 3)
+summary_artist_means$artist <- as.factor(artist_catalogue$artist)
+summary_artist_means %>%
+  arrange(-mean) 
+```
+
+```{r}
+posterior_artist_means_CIs_plot <- summary_artist_means %>%
+  arrange(-mean) %>%
+  slice(1:10) %>%
+  mutate(artist = fct_reorder(artist, mean)) %>%
+  ggplot(aes(x = mean, y = artist)) +
+  geom_errorbarh(aes(xmax = `2.5%`, xmin = `97.5%`, color = artist)) +
+  geom_point(color = "black") +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 12),
+    legend.position = "none"
+  ) +
+  ggtitle("95% CIs for Artist Mean Deviations") +
+  labs(x = "Artist Mean Deviation", y = "Artist") +
+  geom_vline(xintercept = 0, linetype = "dashed")
+```
+
+```{r}
+posterior_artist_means_CIs_plot
+```
